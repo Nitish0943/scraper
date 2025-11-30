@@ -1,0 +1,19 @@
+{
+  "name": "scholarship-scraper",
+  "version": "1.0.0",
+  "description": "A web scraper for scholarship data using Playwright and Cheerio",
+  "main": "scrape.js",
+  "type": "module",
+  "scripts": {
+    "scrape": "node scrape.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.1.0",
+    "playwright": "^1.44.0",
+    "slugify": "^1.6.6"
+  },
+  "author": "",
+  "license": "ISC"
+}

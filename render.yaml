@@ -1,0 +1,14 @@
+services:
+  - type: cron
+    name: scholarship-scraper
+    env: docker
+    schedule: "0 0 * * *" # Runs every day at midnight UTC
+    plan: free
+    dockerCommand: npm run scrape
+    envVars:
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
