@@ -5,12 +5,15 @@
   "main": "scrape.js",
   "type": "module",
   "scripts": {
-    "scrape": "node scrape.js"
+    "scrape": "node scrape.js",
+    "schedule": "node schedule.js",
+    "scrape:ncs": "node ncs/scrape_ncs.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.4.5",
     "firebase-admin": "^12.1.0",
+    "node-cron": "^3.0.3",
     "playwright": "^1.44.0",
     "slugify": "^1.6.6"
   },

@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import * as cheerio from 'cheerio';
 import slugify from 'slugify';
-import { saveToFirestore } from './utils/firebase.js';
+import { saveToFirestore, saveJobsToFirestore } from './utils/firebase.js';
 
 // Configuration for target sites
 const TARGETS = [
@@ -25,6 +25,12 @@ const TARGETS = [
         url: 'https://highereducation.jk.gov.in/scholarships',
         parser: parseJKHigherEd
     }
+    ,
+    {
+        name: 'National Career Service (Jobs)',
+        url: 'https://www.ncs.gov.in/job-seeker/Pages/Search.aspx?OT=lp9dNs3%2FpQ%2FJ1WtoCNHP9Q%3D%3D',
+        parser: parseNCSJobs
+    }
 ];
 
 async function safeGoto(page, url, retries = 3) {
@@ -40,7 +46,7 @@ async function safeGoto(page, url, retries = 3) {
     }
 }
 
-async function runScraper() {
+export async function runScraper() {
     console.log("Starting Scholarship Scraper...");
 
     const browser = await chromium.launch({
@@ -82,9 +88,20 @@ async function runScraper() {
 
     await browser.close();
 
-    console.log(`\nTotal schemes collected: ${allData.length}`);
+    console.log(`\nTotal items collected: ${allData.length}`);
     if (allData.length > 0) {
-        await saveToFirestore(allData);
+        const jobs = allData.filter(i => i.type === 'job');
+        const scholarships = allData.filter(i => i.type !== 'job');
+
+        console.log(`Uploading scholarships: ${scholarships.length}`);
+        if (scholarships.length > 0) {
+            await saveToFirestore(scholarships);
+        }
+
+        console.log(`Uploading jobs: ${jobs.length}`);
+        if (jobs.length > 0) {
+            await saveJobsToFirestore(jobs);
+        }
     } else {
         console.log("Skipping database save (No data).");
     }
@@ -207,4 +224,86 @@ function parseJKHigherEd($, sourceUrl) {
     return schemes;
 }
 
-runScraper();
+// NCS Portal – Best-effort parser for job listings/cards
+function parseNCSJobs($, sourceUrl) {
+    const jobs = [];
+
+    // Strategy 1: Look for common job card patterns
+    const cardSelectors = [
+        '.job-card',
+        '.card.job',
+        '.jobListing',
+        'li.job',
+        '.jobs-list .card',
+        '.jobs-list li'
+    ];
+
+    for (const sel of cardSelectors) {
+        $(sel).each((i, el) => {
+            const title = cleanText($(el).find('h3, h4, .title').first().text()) || cleanText($(el).text());
+            const company = cleanText($(el).find('.company, .employer').first().text());
+            const location = cleanText($(el).find('.location, .place').first().text());
+            const link = $(el).find('a').first().attr('href');
+
+            if (title && title.length > 3) {
+                const name = company ? `${title} at ${company}` : title;
+                const sourceLink = link ? (link.startsWith('http') ? link : new URL(link, sourceUrl).toString()) : sourceUrl;
+
+                // Dedupe by title/company
+                if (!jobs.find(j => j.name === name)) {
+                    jobs.push({
+                        scheme_id: createSlug(name),
+                        name,
+                        ministry: 'National Career Service',
+                        amount: 'N/A',
+                        deadline: 'Rolling',
+                        description: location ? `Location: ${location}` : 'Job opportunity listed on NCS portal',
+                        source_url: sourceLink,
+                        type: 'job'
+                    });
+                }
+            }
+        });
+        if (jobs.length > 0) break; // if found via one selector, stop
+    }
+
+    // Strategy 2: Fallback – scan links that look like job postings
+    if (jobs.length === 0) {
+        $('a').each((i, el) => {
+            const text = cleanText($(el).text());
+            const href = $(el).attr('href');
+            if (!href) return;
+            const isJoby = /job|opening|vacanc/i.test(text) || /job|vacancy|opening/i.test(href);
+            if (isJoby && text.length > 3) {
+                const sourceLink = href.startsWith('http') ? href : new URL(href, sourceUrl).toString();
+                if (!jobs.find(j => j.name === text)) {
+                    jobs.push({
+                        scheme_id: createSlug(text),
+                        name: text,
+                        ministry: 'National Career Service',
+                        amount: 'N/A',
+                        deadline: 'Rolling',
+                        description: 'Job opportunity listed on NCS portal',
+                        source_url: sourceLink,
+                        type: 'job'
+                    });
+                }
+            }
+        });
+    }
+
+    return jobs;
+}
+
+// Run only when executed directly: `node scrape.js`
+try {
+    const invokedAs = new URL(process.argv[1], 'file://').href;
+    if (import.meta.url === invokedAs) {
+        runScraper().catch(err => {
+            console.error('Scraper failed:', err);
+            process.exitCode = 1;
+        });
+    }
+} catch (_) {
+    // process.argv[1] may be undefined in some contexts; ignore
+}
